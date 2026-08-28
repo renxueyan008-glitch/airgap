@@ -768,6 +768,29 @@ body {
   flex-wrap: wrap;
 }
 
+.compat-message {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.compat-message.success {
+  border-color: var(--success);
+  background-color: var(--success-bg);
+  color: var(--success);
+}
+
+.compat-message.error {
+  border-color: var(--danger);
+  background-color: var(--danger-bg);
+  color: var(--danger);
+}
+
 .select-input {
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
@@ -1172,22 +1195,22 @@ body {
             <div class="control-group">
               <label class="control-label">
                 <span>(a) 动态二维码播放帧率 (FPS)</span>
-                <span id="sender-fps-value" style="color: var(--primary);">8 FPS</span>
+                <span id="sender-fps-value" style="color: var(--primary);">6 FPS</span>
               </label>
-              <input type="range" id="sender-fps-slider" class="slider-input" min="1" max="25" value="8" step="1">
+              <input type="range" id="sender-fps-slider" class="slider-input" min="1" max="25" value="6" step="1">
             </div>
 
             <!-- Parameter C: Chunk size per frame -->
             <div class="control-group">
               <label class="control-label">
                 <span>(c) 每一帧存储大小 (分片容量)</span>
-                <span id="sender-chunk-value" style="color: var(--primary);">350 字节/帧</span>
+                <span id="sender-chunk-value" style="color: var(--primary);">300 字符/帧</span>
               </label>
-              <input type="range" id="sender-chunk-slider" class="slider-input" min="100" max="1500" value="350" step="25">
+              <input type="range" id="sender-chunk-slider" class="slider-input" min="100" max="1500" value="300" step="25">
               <div class="chunk-presets-row">
                 <span style="font-size: 11px; color: var(--text-subtle); align-self: center;">快捷预设:</span>
                 <button class="chunk-preset-btn" data-size="200" type="button">⚡ 极速易扫 (200B)</button>
-                <button class="chunk-preset-btn" data-size="350" type="button">🎯 平衡推荐 (350B)</button>
+                <button class="chunk-preset-btn" data-size="300" type="button">🎯 平衡推荐 (300B)</button>
                 <button class="chunk-preset-btn" data-size="700" type="button">📦 高密度 (700B)</button>
                 <button class="chunk-preset-btn" data-size="1200" type="button">🚀 大容量 (1200B)</button>
               </div>
@@ -1315,6 +1338,8 @@ body {
               <span>⏹</span> 停止扫描
             </button>
           </div>
+
+          <div id="receiver-compat-message" class="compat-message"></div>
 
           <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-subtle); margin-top: 8px;">
             <span id="receiver-fps-display">0 FPS</span>
@@ -3129,10 +3154,7 @@ var qrcode = function() {
       } else {
         switch (c) {
         case ' ' : return 36;
-        case '
-</body>
-</html>
- : return 37;
+        case '$' : return 37;
         case '%' : return 38;
         case '*' : return 39;
         case '+' : return 40;
@@ -14267,8 +14289,8 @@ class AirGapSender {
     this.selectedFileData = null;
     this.frames = [];
     this.currentFrameIndex = 0;
-    this.fps = 8;
-    this.chunkSize = 350;
+    this.fps = 6;
+    this.chunkSize = 300;
     this.enableCompression = true;
     this.correctionLevel = 'M';
     this.isPlaying = false;
@@ -14352,7 +14374,7 @@ class AirGapSender {
     if (this.chunkSlider) {
       this.chunkSlider.addEventListener('input', (e) => {
         this.chunkSize = parseInt(e.target.value, 10) || 350;
-        if (this.chunkValueDisplay) this.chunkValueDisplay.textContent = `${this.chunkSize} 字节/帧`;
+        if (this.chunkValueDisplay) this.chunkValueDisplay.textContent = `${this.chunkSize} 字符/帧`;
         this.updateEstimatedFrames();
       });
     }
@@ -14365,7 +14387,7 @@ class AirGapSender {
           if (size) {
             this.chunkSize = size;
             if (this.chunkSlider) this.chunkSlider.value = size;
-            if (this.chunkValueDisplay) this.chunkValueDisplay.textContent = `${size} 字节/帧`;
+            if (this.chunkValueDisplay) this.chunkValueDisplay.textContent = `${size} 字符/帧`;
             this.updateEstimatedFrames();
           }
         });
@@ -14580,8 +14602,8 @@ class AirGapSender {
       let encodeData, type, fileName = '', fileType = '';
 
       if (this.currentMode === 'text') {
-        const text = this.textInput.value.trim();
-        if (!text) {
+        const text = this.textInput.value;
+        if (!text.trim()) {
           alert('请输入或粘贴需要传输的文本内容！');
           return;
         }
@@ -14907,10 +14929,13 @@ class AirGapReceiver {
 
     // Performance & Stats
     this.lastScanTime = 0;
-    this.minScanInterval = 30;
+    this.minScanInterval = 60;
     this.fpsCounter = 0;
     this.lastFpsUpdate = 0;
     this.scanRafId = null;
+    this.scanInFlight = false;
+    this.scanGeneration = 0;
+    this.cameraRequestId = 0;
     this.barcodeDetector = null;
     this.hasNativeDetector = false;
 
@@ -14920,6 +14945,7 @@ class AirGapReceiver {
     this.initNativeDetector();
     this.initElements();
     this.bindEvents();
+    this.updateCompatibilityMessage();
   }
 
   async initNativeDetector() {
@@ -14955,6 +14981,7 @@ class AirGapReceiver {
     this.statusBadge = document.getElementById('receiver-status-badge');
     this.fpsDisplay = document.getElementById('receiver-fps-display');
     this.resolutionDisplay = document.getElementById('receiver-res-display');
+    this.compatibilityMessage = document.getElementById('receiver-compat-message');
     this.progressFill = document.getElementById('receiver-progress-fill');
     this.progressPercent = document.getElementById('receiver-progress-percent');
     this.progressCount = document.getElementById('receiver-progress-count');
@@ -15042,6 +15069,26 @@ class AirGapReceiver {
     }
   }
 
+  updateCompatibilityMessage() {
+    if (!this.compatibilityMessage) return;
+
+    const isLocalhost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+    if (!window.isSecureContext && !isLocalhost) {
+      this.compatibilityMessage.className = 'compat-message error';
+      this.compatibilityMessage.textContent = '当前页面不是安全来源。接收端必须通过 HTTPS 或 http://127.0.0.1 打开；GitHub 文件预览页和 raw 链接不能用于扫码。';
+      return;
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      this.compatibilityMessage.className = 'compat-message error';
+      this.compatibilityMessage.textContent = '当前浏览器不提供摄像头接口。请在 Safari/Chrome 中打开 HTTPS 的 GitHub Pages 站点。';
+      return;
+    }
+
+    this.compatibilityMessage.className = 'compat-message success';
+    this.compatibilityMessage.textContent = '页面来源与摄像头接口检查通过。首次使用时，请允许浏览器访问摄像头。';
+  }
+
   async getCameras() {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
@@ -15065,7 +15112,23 @@ class AirGapReceiver {
   }
 
   async startCamera() {
-    this.stopCamera();
+    const isLocalhost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+    if (!window.isSecureContext && !isLocalhost) {
+      this.updateCompatibilityMessage();
+      this.updateStatus('需要 HTTPS 或本地主机', 'error');
+      alert('无法启动摄像头：请通过 HTTPS 的 GitHub Pages 地址，或电脑上的 http://127.0.0.1 地址打开本页。\n不要从 GitHub 文件预览页或 raw 链接打开。');
+      return;
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      this.updateCompatibilityMessage();
+      this.updateStatus('浏览器不支持摄像头接口', 'error');
+      alert('当前浏览器不支持网页摄像头接口，请使用最新版 Safari、Chrome 或 Edge。');
+      return;
+    }
+
+    this.stopCamera(false);
+    const requestId = ++this.cameraRequestId;
     this.updateDownscalingConfig();
 
     let widthConstraint = { ideal: 640, max: 1280 };
@@ -15094,15 +15157,36 @@ class AirGapReceiver {
 
     try {
       this.updateStatus('正在启动摄像头...', 'loading');
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        video: videoConstraints,
-        audio: false
-      });
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: videoConstraints,
+          audio: false
+        });
+      } catch (primaryError) {
+        const canRetry = ['OverconstrainedError', 'NotFoundError', 'TypeError'].includes(primaryError.name);
+        if (!canRetry) throw primaryError;
+
+        // Some iOS versions reject otherwise valid width/height constraints.
+        // Retry once with the least restrictive rear-camera preference.
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: this.facingMode } },
+          audio: false
+        });
+      }
+
+      if (requestId !== this.cameraRequestId) {
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      }
+
+      this.stream = stream;
 
       this.videoElement.srcObject = this.stream;
       await this.videoElement.play();
 
       this.isScanning = true;
+      this.scanInFlight = false;
       this.updateStatus('扫描中...', 'active');
       if (this.btnStartCam) this.btnStartCam.classList.add('hidden');
       if (this.btnStopCam) this.btnStopCam.classList.remove('hidden');
@@ -15111,13 +15195,17 @@ class AirGapReceiver {
       this.startScanLoop();
     } catch (err) {
       console.error('Camera access error:', err);
-      this.updateStatus(`无法打开摄像头: ${err.message}`, 'error');
-      alert(`无法访问摄像头，请检查浏览器权限设置！\n错误: ${err.message}`);
+      const message = this.describeCameraError(err);
+      this.updateStatus(message, 'error');
+      alert(`${message}\n\n请确认 Safari 的“设置 → 网站 → 摄像头”已允许当前 GitHub Pages 站点。`);
     }
   }
 
-  stopCamera() {
+  stopCamera(invalidateRequest = true) {
+    if (invalidateRequest) this.cameraRequestId++;
     this.isScanning = false;
+    this.scanGeneration++;
+    this.scanInFlight = false;
     if (this.scanRafId) {
       cancelAnimationFrame(this.scanRafId);
       this.scanRafId = null;
@@ -15144,13 +15232,19 @@ class AirGapReceiver {
   }
 
   startScanLoop() {
+    const generation = ++this.scanGeneration;
     const loop = (timestamp) => {
-      if (!this.isScanning) return;
+      if (!this.isScanning || generation !== this.scanGeneration) return;
 
       if (this.videoElement.readyState === this.videoElement.HAVE_ENOUGH_DATA) {
-        if (timestamp - this.lastScanTime >= this.minScanInterval) {
+        if (!this.scanInFlight && timestamp - this.lastScanTime >= this.minScanInterval) {
           this.lastScanTime = timestamp;
-          this.scanCurrentFrame();
+          this.scanInFlight = true;
+          Promise.resolve(this.scanCurrentFrame(generation))
+            .catch(err => console.warn('QR frame scan failed:', err))
+            .finally(() => {
+              if (generation === this.scanGeneration) this.scanInFlight = false;
+            });
 
           this.fpsCounter++;
           if (timestamp - this.lastFpsUpdate >= 1000) {
@@ -15172,7 +15266,7 @@ class AirGapReceiver {
   /**
    * Performs frame capture with aggressive downscaling to prevent iPhone Safari lag
    */
-  async scanCurrentFrame() {
+  async scanCurrentFrame(generation = this.scanGeneration) {
     const video = this.videoElement;
     const vWidth = video.videoWidth;
     const vHeight = video.videoHeight;
@@ -15214,6 +15308,8 @@ class AirGapReceiver {
       } catch (e) {}
     }
 
+    if (!this.isScanning || generation !== this.scanGeneration) return;
+
     if (!rawString && typeof window.jsQR !== 'undefined') {
       const imgData = this.scanCtx.getImageData(0, 0, targetW, targetH);
       const code = window.jsQR(imgData.data, targetW, targetH, {
@@ -15231,6 +15327,23 @@ class AirGapReceiver {
     } else {
       this.clearOverlay();
     }
+  }
+
+  describeCameraError(err) {
+    const name = err && err.name ? err.name : '';
+    if (name === 'NotAllowedError' || name === 'SecurityError') {
+      return '摄像头权限被拒绝或被浏览器安全策略阻止';
+    }
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      return '没有找到可用摄像头';
+    }
+    if (name === 'NotReadableError' || name === 'TrackStartError') {
+      return '摄像头正被其他应用占用';
+    }
+    if (name === 'OverconstrainedError') {
+      return '摄像头不支持所选分辨率，请切换为 480p 后重试';
+    }
+    return `无法打开摄像头${err && err.message ? `：${err.message}` : ''}`;
   }
 
   drawDetectionBox(location, srcW, srcH) {
@@ -15669,12 +15782,14 @@ class AirGapApp {
     if (btnSampleText && textInput) {
       btnSampleText.addEventListener('click', () => {
         textInput.value = `【动态二维码数据穿透互传测试】\n发送时间: ${new Date().toLocaleString()}\n内网计算机与 iPhone 之间已建立安全光电无感通信信道。\n支持在完全物理隔离的环境下传输任意长度的文本、JSON 配置、脚本或文档！`;
+        textInput.dispatchEvent(new Event('input', { bubbles: true }));
       });
     }
 
     if (btnSampleCode && textInput) {
       btnSampleCode.addEventListener('click', () => {
         textInput.value = `// 自动化批量脚本示例\nfunction airGapPipeline() {\n  const config = {\n    environment: 'air-gapped-intranet',\n    optimizedFor: 'iPhone Safari Back Camera (480p downscale)',\n    securityLevel: 'Maximum',\n    timestamp: ${Date.now()}\n  };\n  console.log('Transfer complete:', config);\n  return config;\n}\nairGapPipeline();`;
+        textInput.dispatchEvent(new Event('input', { bubbles: true }));
       });
     }
   }
